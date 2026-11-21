@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1014">
+<title>짤 썸네일 스튜디오</title>
+<meta name="description" content="짤 이미지에 굵은 문구 띠를 얹고 유튜브·틱톡 피드 미리보기까지 확인하는 썸네일 제작 도구">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230e1014'/%3E%3Crect x='6' y='17' width='20' height='8' rx='2' fill='%23ff4d6d'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <b>짤 썸네일 스튜디오</b>
+      <small>문구 얹고 · 피드 미리보기 · PNG 저장</small>
+    </div>
+  </div>
+  <div class="ratio" role="group" aria-label="출력 비율">
+    <button type="button" data-ratio="1:1" class="on">1:1</button>
+    <button type="button" data-ratio="4:5">4:5</button>
+    <button type="button" data-ratio="9:16">9:16</button>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ───────────────── 에디터 ───────────────── -->
+  <section class="pane editor" aria-label="편집">
+    <div class="stage-wrap">
+      <div class="stage" id="stage" title="이미지를 끌어다 놓거나 붙여넣기(Ctrl+V) 하세요">
+        <canvas id="stageCanvas"></canvas>
+        <div class="stage-empty" id="stageEmpty">
+          <div class="drop-ico" aria-hidden="true">⇪</div>
+          <b>이미지를 끌어다 놓기</b>
+          <span>또는 <u>여기를 눌러 선택</u> · Ctrl+V 붙여넣기</span>
+        </div>
+        <div class="stage-tip" id="stageTip">드래그해서 위치 조정</div>
+      </div>
+      <div class="stage-bar">
+        <button type="button" class="btn" id="pickBtn">이미지 선택</button>
+        <button type="button" class="btn ghost" id="clearBtn">지우기</button>
+        <span class="dims" id="dims">1080 × 1080</span>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" hidden>
+    </div>
+
+    <div class="controls">
+      <div class="card">
+        <div class="card-head">
+          <label for="textInput">띠 문구 <small>줄바꿈으로 2~3줄</small></label>
+          <span class="count" id="lineCount">2줄</span>
+        </div>
+        <textarea id="textInput" rows="3" spellcheck="false" placeholder="첫째 줄&#10;둘째 줄"></textarea>
+        <div class="chips" id="presetChips">
+          <button type="button" data-preset="1">1줄 예시</button>
+          <button type="button" data-preset="2">2줄 예시</button>
+          <button type="button" data-preset="3">3줄 예시</button>
+        </div>
+        <div class="seg" role="group" aria-label="정렬">
+          <button type="button" data-align="left">왼쪽</button>
+          <button type="button" data-align="center" class="on">가운데</button>
+          <button type="button" data-align="right">오른쪽</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="slider" data-key="size">
+          <div class="s-head"><label for="sSize">글자 크기</label><output id="oSize">104</output></div>
+          <input type="range" id="sSize" min="48" max="180" step="2" value="104">
+        </div>
+        <div class="slider" data-key="lh">
+          <div class="s-head"><label for="sLh">줄 간격</label><output id="oLh">1.15</output></div>
+          <input type="range" id="sLh" min="0.85" max="1.8" step="0.05" value="1.15">
+        </div>
+        <div class="slider" data-key="pad">
+          <div class="s-head"><label for="sPad">띠 두께</label><output id="oPad">1.0</output></div>
+          <input type="range" id="sPad" min="0.2" max="2.2" step="0.1" value="1">
+        </div>
+        <div class="slider" data-key="opacity">
+          <div class="s-head"><label for="sOpacity">띠 투명도</label><output id="oOpacity">78%</output></div>
+          <input type="range" id="sOpacity" min="0" max="100" step="1" value="78">
+        </div>
+        <div class="slider" data-key="stroke">
+          <div class="s-head"><label for="sStroke">글자 테두리</label><output id="oStroke">16</output></div>
+          <input type="range" id="sStroke" min="0" max="30" step="1" value="16">
+        </div>
+        <div class="slider" data-key="zoom">
+          <div class="s-head"><label for="sZoom">이미지 확대</label><output id="oZoom">100%</output></div>
+          <input type="range" id="sZoom" min="100" max="300" step="1" value="100">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><label for="captionInput">제목 / 캡션</label></div>
+        <input type="text" id="captionInput" value="상품이 궁금하면 프로필 링크에서 021번!">
+        <p class="hint">유튜브 제목줄과 틱톡 캡션에 그대로 써서 미리보기 합니다.</p>
+      </div>
+
+      <button type="button" class="btn primary big" id="downloadBtn">PNG 다운로드</button>
+      <p class="hint center" id="dlHint">1080px 고해상도 PNG</p>
+    </div>
+  </section>
+
+  <!-- ───────────────── 미리보기 ───────────────── -->
+  <section class="pane preview" aria-label="피드 미리보기">
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="yt" class="on">유튜브 커뮤니티</button>
+      <button type="button" role="tab" data-tab="tt">틱톡 피드</button>
+    </div>
+
+    <div class="check" id="checkList" aria-live="polite"></div>
+
+    <div class="frames">
+
+      <!-- 유튜브 커뮤니티 피드 -->
+      <div class="frame on" id="frameYt">
+        <div class="phone yt">
+          <div class="screen">
+            <div class="statusbar"><span>9:41</span><span class="sb-r">▮▮ ⌁ ▰</span></div>
+            <div class="appbar"><span class="ico">‹</span><b>커뮤니티</b><span class="ico">⌕</span></div>
+            <div class="feed">
+              <article class="post">
+                <div class="p-head"><i class="avatar" style="--c:#5b8cff">동</i><div><b>싱글벙글 동물촌</b><span>3시간 전</span></div></div>
+                <p class="p-text">우리집 고양이 오늘도 출근합니다</p>
+                <div class="p-img" style="--g1:#22325c;--g2:#7f9bd1">🐈</div>
+                <div class="p-act"><span>👍 1.2천</span><span>💬 84</span><span>↗</span></div>
+              </article>
+
+              <article class="post mine">
+                <div class="mine-badge">내 게시물</div>
+                <div class="p-head"><i class="avatar" style="--c:#ff4d6d">짤</i><div><b>싱글벙글 동물촌</b><span>방금</span></div></div>
+                <p class="p-text" id="ytTitle">상품이 궁금하면 프로필 링크에서 021번!</p>
+                <canvas id="ytImg" class="p-canvas"></canvas>
+                <div class="p-act"><span>👍 0</span><span>💬 0</span><span>↗</span></div>
+              </article>
+
+              <article class="post">
+                <div class="p-head"><i class="avatar" style="--c:#41c98a">한</i><div><b>한도초과</b><span>어제</span></div></div>
+                <p class="p-text">이건 못 참지 ㅋㅋ</p>
+                <div class="p-img" style="--g1:#2f4a35;--g2:#8fd0a4">🐶</div>
+                <div class="p-act"><span>👍 3.4천</span><span>💬 210</span><span>↗</span></div>
+              </article>
+            </div>
+            <div class="tabbar"><span class="on">⌂<small>홈</small></span><span>▤<small>게시물</small></span><span>＋</span><span>◍<small>구독</small></span><span>☰<small>보관함</small></span></div>
+          </div>
+        </div>
+        <p class="frame-cap">커뮤니티 피드에서 사진이 잘리거나 글자가 작아 보이지 않는지 확인</p>
+      </div>
+
+      <!-- 틱톡 피드 -->
+      <div class="frame" id="frameTt">
+        <div class="phone tt" id="ttPhone">
+          <canvas id="ttImg" class="tt-img"></canvas>
+          <div class="tt-top"><span class="on">팔로잉</span><span>추천</span></div>
+          <div class="tt-side">
+            <div class="tt-act"><i style="--c:#ff2d55">♥</i><small>12.4K</small></div>
+            <div class="tt-act"><i>💬</i><small>231</small></div>
+            <div class="tt-act"><i>🔖</i><small>87</small></div>
+            <div class="tt-act"><i>↪</i><small>공유</small></div>
+            <div class="tt-disc"></div>
+          </div>
+          <div class="tt-bottom">
+            <b>@animallolvillage</b>
+            <p class="tt-cap" id="ttCaption">상품이 궁금하면 프로필 링크에서 021번!</p>
+            <p class="tt-tags">#짤 #웃긴짤 #동물</p>
+            <p class="tt-music">♫ 인기 음원 · 원곡</p>
+          </div>
+          <div class="tt-nav"><span class="on">홈</span><span>친구</span><span class="plus">＋</span><span>메시지</span><span>프로필</span></div>
+          <div class="tt-mask" id="ttMask">
+            <div class="mask-zone"><span>캡션·아이콘 가림 영역</span></div>
+          </div>
+        </div>
+        <div class="frame-tools">
+          <button type="button" class="btn tiny" id="maskBtn">가림 영역 보기</button>
+        </div>
+        <p class="frame-cap">틱톡은 세로 9:16이 꽉 차요. 띠가 아래 캡션과 겹치면 글자가 안 보입니다.</p>
+      </div>
+
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
