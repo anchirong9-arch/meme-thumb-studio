@@ -72,7 +72,30 @@
     oSize: $('#oSize'), oLh: $('#oLh'), oPad: $('#oPad'), oOpacity: $('#oOpacity'),
     oStroke: $('#oStroke'), oZoom: $('#oZoom'), oTitleSize: $('#oTitleSize'),
     sSize: $('#sSize'), sLh: $('#sLh'), sPad: $('#sPad'), sOpacity: $('#sOpacity'),
-    sStroke: $('#sStroke'), sZoom: $('#sZoom'), sTitleSize: $('#sTitleSize')
+    sStroke: $('#sStroke'), sZoom: $('#sZoom'), sTitleSize: $('#sTitleSize'),
+
+    layoutMain: $('#layoutMain'),
+    batchView: $('#batchView'),
+    batchDrop: $('#batchDrop'),
+    batchInput: $('#batchInput'),
+    batchGrid: $('#batchGrid'),
+    batchCount: $('#batchCount'),
+    batchZip: $('#batchZip'),
+    batchClear: $('#batchClear'),
+    batchBg: $('#batchBg'),
+    batchHint: $('#batchHint'),
+    editModal: $('#editModal'),
+    editName: $('#editName'),
+    editMeta: $('#editMeta'),
+    editCanvas: $('#editCanvas'),
+    editClose: $('#editClose'),
+    editUndo: $('#editUndo'),
+    editReset: $('#editReset'),
+    editCount: $('#editCount'),
+    editTools: $('#editTools'),
+    sMosaic: $('#sMosaic'),
+    oMosaic: $('#oMosaic'),
+    mosaicWrap: $('#mosaicWrap')
   };
 
   const base = document.createElement('canvas');
@@ -553,6 +576,7 @@
     if (raf) return;
     raf = requestAnimationFrame(() => {
       raf = 0;
+      if (state.mode === 'batch') return;
       try {
         renderBase();
         drawStage();
@@ -629,6 +653,11 @@
 
   function syncInputs() {
     $$('.modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === state.mode));
+
+    const isBatch = state.mode === 'batch';
+    els.layoutMain.hidden = isBatch;
+    els.batchView.hidden = !isBatch;
+    $$('.ratio').forEach(el => { el.hidden = isBatch; });
     $$('.ratio button').forEach(b => b.classList.toggle('on', b.dataset.ratio === state.ratio));
     $$('.seg button[data-align]').forEach(b => b.classList.toggle('on', b.dataset.align === state.t.align));
     $$('.seg button[data-pos]').forEach(b => b.classList.toggle('on', b.dataset.pos === state.t.pos));
@@ -726,6 +755,11 @@
   });
   window.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
   window.addEventListener('drop', e => {
+    if (!els.editModal.hidden) { e.preventDefault(); return; }
+    if (state.mode === 'batch') {
+      if (e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); batchAddFiles(e.dataTransfer.files); }
+      return;
+    }
     if (e.target.closest && e.target.closest('.stage')) return;
     if (e.dataTransfer && e.dataTransfer.files.length) e.preventDefault();
   });
@@ -733,6 +767,11 @@
   window.addEventListener('paste', e => {
     const items = e.clipboardData && e.clipboardData.items;
     if (!items) return;
+    if (state.mode === 'batch') {
+      const files = [...items].filter(it => it.type.startsWith('image/')).map(it => it.getAsFile()).filter(Boolean);
+      if (files.length) { batchAddFiles(files); e.preventDefault(); }
+      return;
+    }
     for (const it of items) {
       if (it.type.startsWith('image/')) {
         const f = it.getAsFile();
@@ -743,9 +782,16 @@
 
   // 모드 전환
   $$('.modes button').forEach(b => b.addEventListener('click', () => {
-    state.ratioByMode[state.mode] = state.ratio;
-    state.mode = b.dataset.mode;
-    state.ratio = state.ratioByMode[state.mode] || (state.mode === 'card' ? '4:5' : '1:1');
+    const next = b.dataset.mode;
+    if (state.mode === next) return;
+    if (state.mode !== 'batch') state.ratioByMode[state.mode] = state.ratio;
+    state.mode = next;
+    if (next === 'batch') {
+      syncInputs();
+      batchRender();
+      return;
+    }
+    state.ratio = state.ratioByMode[next] || (next === 'card' ? '4:5' : '1:1');
     syncInputs();
     render();
   }));
@@ -873,8 +919,732 @@
     }, 'image/png');
   });
 
+  /* ───────── 일괄 여백 변환 (4:5 · 1:1 · 9:16 · 16:9) ───────── */
+
+  const BATCH_MAX = 20;
+  const OUT_SIZES = { '4:5': [1080, 1350], '1:1': [1080, 1080], '9:16': [1080, 1920], '16:9': [1920, 1080] };
+  const batch = {
+    items: [], bg: '#ffffff', out: '4:5', busy: false, seq: 0,
+    edit: null, tool: 'mosaic', strength: 16, drag: null, geo: null
+  };
+
+  const pad2 = n => String(n).padStart(2, '0');
+  const ratioTag = () => batch.out.replace(':', 'x');
+
+  function fmtBytes(b) {
+    if (!b) return '';
+    return b >= 1048576 ? (b / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(b / 1024)) + 'KB';
+  }
+
+  /* 큰 이미지를 한 번에 줄이면 계단현상이 생겨서 절반씩 나눠 줄인다 */
+  function stepped(img, maxW, maxH) {
+    let w = img.naturalWidth || img.width || 1;
+    let h = img.naturalHeight || img.height || 1;
+    let src = img;
+    while (w > maxW * 2 && h > maxH * 2) {
+      const cw = Math.max(1, Math.round(w / 2));
+      const ch = Math.max(1, Math.round(h / 2));
+      const c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      const cx = c.getContext('2d');
+      cx.imageSmoothingQuality = 'high';
+      cx.drawImage(src, 0, 0, cw, ch);
+      src = c; w = cw; h = ch;
+    }
+    return { src, w, h };
+  }
+
+  /* 비율 유지(contain)로 캔버스 가운데 배치, 남는 곳은 bg */
+  function paintContain(ctx, img, W, H, bg) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H); }
+    const iw = img.naturalWidth || img.width || 0;
+    const ih = img.naturalHeight || img.height || 0;
+    if (!iw || !ih) return;
+    const s = Math.min(W / iw, H / ih);
+    const dw = Math.max(1, Math.round(iw * s));
+    const dh = Math.max(1, Math.round(ih * s));
+    const dx = Math.round((W - dw) / 2), dy = Math.round((H - dh) / 2);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if (s < 0.5) {
+      const st = stepped(img, dw, dh);
+      ctx.drawImage(st.src, dx, dy, dw, dh);
+    } else {
+      ctx.drawImage(img, dx, dy, dw, dh);
+    }
+  }
+
+  /* 모자이크: 영역을 작게 줄였다가 픽셀 그대로 확대 */
+  function pixelateRegion(ctx, rect, block) {
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const x = clamp(Math.round(rect.x), 0, W);
+    const y = clamp(Math.round(rect.y), 0, H);
+    const w = clamp(Math.round(rect.w), 1, W - x);
+    const h = clamp(Math.round(rect.h), 1, H - y);
+    if (w < 2 || h < 2) return;
+    const b = Math.max(2, Math.round(block));
+    const tw = Math.max(1, Math.round(w / b));
+    const th = Math.max(1, Math.round(h / b));
+    const tmp = document.createElement('canvas');
+    tmp.width = tw; tmp.height = th;
+    const tctx = tmp.getContext('2d');
+    tctx.imageSmoothingEnabled = true;
+    tctx.drawImage(ctx.canvas, x, y, w, h, 0, 0, tw, th);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(tmp, 0, 0, tw, th, x, y, tw * b, th * b);
+    ctx.restore();
+  }
+
+  /* 편집 정보는 원본 기준 0~1 좌표라서 출력 비율이 바뀌어도 그대로 따라간다 */
+  function applyEdit(ctx, e) {
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const r = { x: e.x * W, y: e.y * H, w: e.w * W, h: e.h * H };
+    if (e.type === 'mosaic') {
+      pixelateRegion(ctx, r, (e.strength || 16) * (W / 1080));
+    } else {
+      ctx.fillStyle = e.type === 'black' ? '#000000' : '#ffffff';
+      ctx.fillRect(Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h));
+    }
+  }
+
+  function buildEdited(item) {
+    const img = item.img;
+    const iw = img.naturalWidth || img.width || 1;
+    const ih = img.naturalHeight || img.height || 1;
+    const s = Math.min(1, 1600 / Math.max(iw, ih));
+    const W = Math.max(1, Math.round(iw * s));
+    const H = Math.max(1, Math.round(ih * s));
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, W, H);
+    item.edits.forEach(e => applyEdit(ctx, e));
+    return c;
+  }
+
+  function sourceFor(item) {
+    if (!item.img) return null;
+    if (!item.edits || !item.edits.length) return item.img;
+    if (item._edited && item._rev === item.rev) return item._edited;
+    item._edited = buildEdited(item);
+    item._rev = item.rev;
+    return item._edited;
+  }
+
+  function batchCanvasFor(item) {
+    const [W, H] = OUT_SIZES[batch.out];
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    paintContain(c.getContext('2d'), sourceFor(item), W, H, batch.bg);
+    return c;
+  }
+
+  const canvasBlob = c => new Promise(res => {
+    try { c.toBlob(b => res(b), 'image/png'); } catch (_) { res(null); }
+  });
+
+  function saveBlob(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 6000);
+  }
+
+  function safeBaseName(name, fallback) {
+    const base = String(name || '').replace(/\.[^.\\/]+$/, '');
+    const clean = base.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 60);
+    return clean || fallback;
+  }
+
+  /* ───────── ZIP (무압축 store) ───────── */
+
+  let crcTable = null;
+  function crc32(buf) {
+    if (!crcTable) {
+      crcTable = new Uint32Array(256);
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        crcTable[n] = c >>> 0;
+      }
+    }
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function dosStamp(d) {
+    return {
+      time: ((d.getHours() & 31) << 11) | ((d.getMinutes() & 63) << 5) | ((d.getSeconds() / 2) & 31),
+      date: (((d.getFullYear() - 1980) & 127) << 9) | (((d.getMonth() + 1) & 15) << 5) | (d.getDate() & 31)
+    };
+  }
+
+  function buildZip(files) {
+    const enc = new TextEncoder();
+    const { time, date } = dosStamp(new Date());
+    const parts = [], central = [];
+    let offset = 0;
+
+    for (const f of files) {
+      const nameBytes = enc.encode(f.name);
+      const crc = crc32(f.data);
+      const size = f.data.length;
+
+      const lh = new Uint8Array(30 + nameBytes.length);
+      const lv = new DataView(lh.buffer);
+      lv.setUint32(0, 0x04034b50, true);
+      lv.setUint16(4, 20, true);
+      lv.setUint16(6, 0x0800, true);
+      lv.setUint16(8, 0, true);
+      lv.setUint16(10, time, true);
+      lv.setUint16(12, date, true);
+      lv.setUint32(14, crc, true);
+      lv.setUint32(18, size, true);
+      lv.setUint32(22, size, true);
+      lv.setUint16(26, nameBytes.length, true);
+      lv.setUint16(28, 0, true);
+      lh.set(nameBytes, 30);
+      parts.push(lh, f.data);
+
+      const ch = new Uint8Array(46 + nameBytes.length);
+      const cv = new DataView(ch.buffer);
+      cv.setUint32(0, 0x02014b50, true);
+      cv.setUint16(4, 20, true);
+      cv.setUint16(6, 20, true);
+      cv.setUint16(8, 0x0800, true);
+      cv.setUint16(10, 0, true);
+      cv.setUint16(12, time, true);
+      cv.setUint16(14, date, true);
+      cv.setUint32(16, crc, true);
+      cv.setUint32(20, size, true);
+      cv.setUint32(24, size, true);
+      cv.setUint16(28, nameBytes.length, true);
+      cv.setUint16(30, 0, true);
+      cv.setUint16(32, 0, true);
+      cv.setUint16(34, 0, true);
+      cv.setUint16(36, 0, true);
+      cv.setUint32(38, 0, true);
+      cv.setUint32(42, offset, true);
+      ch.set(nameBytes, 46);
+      central.push(ch);
+
+      offset += lh.length + size;
+    }
+
+    const cdSize = central.reduce((a, c) => a + c.length, 0);
+    const eocd = new Uint8Array(22);
+    const ev = new DataView(eocd.buffer);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(4, 0, true);
+    ev.setUint16(6, 0, true);
+    ev.setUint16(8, files.length, true);
+    ev.setUint16(10, files.length, true);
+    ev.setUint32(12, cdSize, true);
+    ev.setUint32(16, offset, true);
+    ev.setUint16(20, 0, true);
+
+    return new Blob([...parts, ...central, eocd], { type: 'application/zip' });
+  }
+
+  /* ───────── 그리드 ───────── */
+
+  let batchRaf = 0;
+  function batchRender() {
+    if (batchRaf) return;
+    batchRaf = requestAnimationFrame(() => { batchRaf = 0; batchPaint(); });
+  }
+
+  function batchPaint() {
+    const [OW, OH] = OUT_SIZES[batch.out];
+    els.batchCount.textContent = `${batch.items.length} / ${BATCH_MAX}장`;
+    els.batchZip.disabled = batch.busy || !batch.items.length;
+    els.batchClear.disabled = !batch.items.length;
+    els.batchHint.textContent = batch.items.length
+      ? `사진을 누르면 크게 보면서 모자이크·가리기를 할 수 있어요. 지금 설정이면 ${OW} × ${OH} PNG로 저장됩니다.`
+      : '사진을 올리면 올린 순서대로 변환됩니다. 사진을 누르면 원본 복구·모자이크 편집이 열립니다.';
+
+    const frag = document.createDocumentFragment();
+
+    batch.items.forEach((item, idx) => {
+      const fig = document.createElement('figure');
+      fig.className = 'batch-card';
+
+      const box = document.createElement('div');
+      box.className = 'bc-img';
+      box.style.aspectRatio = `${OW} / ${OH}`;
+      box.title = '눌러서 크게 보기 · 모자이크 편집';
+
+      const cv = document.createElement('canvas');
+      cv.width = Math.min(560, OW);
+      cv.height = Math.round(cv.width * OH / OW);
+      cv.className = 'bc-canvas';
+      if (item.img) {
+        paintContain(cv.getContext('2d'), sourceFor(item), cv.width, cv.height, batch.bg);
+      } else {
+        const c2 = cv.getContext('2d');
+        c2.fillStyle = '#0f131a';
+        c2.fillRect(0, 0, cv.width, cv.height);
+      }
+
+      const open = document.createElement('span');
+      open.className = 'bc-open';
+      open.textContent = '눌러서 크게 보기';
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'bc-del';
+      del.textContent = '×';
+      del.title = '이 사진 빼기';
+      del.addEventListener('click', ev => { ev.stopPropagation(); batchRemove(item.id); });
+
+      box.append(cv, open, del);
+
+      if (item.edits.length) {
+        const badge = document.createElement('span');
+        badge.className = 'bc-badge';
+        badge.textContent = `편집 ${item.edits.length}`;
+        box.append(badge);
+      }
+
+      if (item.img) box.addEventListener('click', () => openBatchEditor(item));
+
+      const cap = document.createElement('figcaption');
+      const nm = document.createElement('b');
+      nm.textContent = item.name;
+      nm.title = `${item.name}${item.size ? ' · ' + fmtBytes(item.size) : ''}`;
+      const meta = document.createElement('small');
+      meta.textContent = item.img
+        ? `${item.img.naturalWidth}×${item.img.naturalHeight} → ${OW}×${OH}`
+        : '불러오는 중…';
+
+      const acts = document.createElement('div');
+      acts.className = 'bc-acts';
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'btn tiny';
+      editBtn.textContent = '편집';
+      editBtn.disabled = !item.img;
+      editBtn.addEventListener('click', ev => { ev.stopPropagation(); openBatchEditor(item); });
+      const dlBtn = document.createElement('button');
+      dlBtn.type = 'button';
+      dlBtn.className = 'btn tiny';
+      dlBtn.textContent = 'PNG';
+      dlBtn.title = '이 사진만 저장';
+      dlBtn.disabled = !item.img;
+      dlBtn.addEventListener('click', ev => { ev.stopPropagation(); batchDownloadOne(item); });
+      acts.append(editBtn, dlBtn);
+
+      cap.append(nm, meta, acts);
+      fig.append(box, cap);
+      frag.append(fig);
+    });
+
+    els.batchGrid.replaceChildren(frag);
+  }
+
+  /* ───────── 담기·빼기 ───────── */
+
+  const looksLikeImage = f => !!f && (/^image\//.test(f.type || '') || /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif)$/i.test(f.name || ''));
+
+  function batchAddFiles(fileList) {
+    const files = [...(fileList || [])];
+    const imgs = files.filter(looksLikeImage);
+    if (!imgs.length) { toast('이미지 파일만 넣을 수 있어요'); return; }
+    const room = BATCH_MAX - batch.items.length;
+    if (room <= 0) { toast(`최대 ${BATCH_MAX}장까지예요. 몇 장 빼고 다시 넣어 주세요`); return; }
+    const take = imgs.slice(0, room);
+    if (imgs.length > room) toast(`최대 ${BATCH_MAX}장까지만 담았어요`);
+
+    let pending = take.length;
+    take.forEach(file => {
+      const item = {
+        id: ++batch.seq,
+        name: file.name || `image-${batch.seq}`,
+        size: file.size || 0,
+        img: null,
+        edits: [],
+        rev: 0,
+        _edited: null,
+        _rev: -1
+      };
+      batch.items.push(item);
+
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        item.img = img;
+        URL.revokeObjectURL(url);
+        if (--pending === 0) batchRender();
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        batch.items = batch.items.filter(x => x !== item);
+        toast(`${item.name} 읽기 실패 (HEIC는 JPG로 변환 필요)`);
+        if (--pending === 0) batchRender();
+      };
+      img.src = url;
+    });
+
+    batchRender();
+  }
+
+  function batchRemove(id) {
+    if (batch.edit && batch.edit.id === id) closeBatchEditor();
+    batch.items = batch.items.filter(x => x.id !== id);
+    batchRender();
+  }
+
+  function batchClearAll() {
+    if (!batch.items.length) return;
+    closeBatchEditor();
+    batch.items = [];
+    batchRender();
+    toast('올린 사진을 모두 비웠어요');
+  }
+
+  /* ───────── 저장 ───────── */
+
+  async function batchDownloadOne(item) {
+    if (!item || !item.img) return;
+    const canvas = batchCanvasFor(item);
+    const blob = await canvasBlob(canvas);
+    if (!blob) { toast('저장에 실패했어요. 다시 눌러주세요'); return; }
+    const name = `${safeBaseName(item.name, 'image')}-${ratioTag()}.png`;
+    saveBlob(blob, name);
+    toast('PNG 저장 완료 · ' + name);
+  }
+
+  async function batchDownloadZip() {
+    if (batch.busy) return;
+    const ready = batch.items.filter(x => x.img);
+    if (!ready.length) { toast('이미지를 먼저 넣어 주세요'); return; }
+
+    batch.busy = true;
+    const label = els.batchZip.textContent;
+    const used = new Set();
+    const files = [];
+
+    try {
+      for (let i = 0; i < ready.length; i++) {
+        els.batchZip.textContent = `변환 중 ${i + 1} / ${ready.length}`;
+        await new Promise(r => setTimeout(r, 0));
+        const item = ready[i];
+        const canvas = batchCanvasFor(item);
+        const blob = await canvasBlob(canvas);
+        canvas.width = 1; canvas.height = 1;
+        if (!blob) continue;
+        const base = safeBaseName(item.name, `image-${i + 1}`);
+        let entry = `${pad2(i + 1)}-${base}`;
+        let k = 2;
+        while (used.has(entry)) entry = `${pad2(i + 1)}-${base}-${k++}`;
+        used.add(entry);
+        files.push({ name: entry + '.png', data: new Uint8Array(await blob.arrayBuffer()) });
+      }
+
+      if (!files.length) { toast('변환된 이미지가 없어요'); return; }
+
+      els.batchZip.textContent = `ZIP 묶는 중 (${files.length}장)`;
+      await new Promise(r => setTimeout(r, 0));
+      const zip = buildZip(files);
+      const d = new Date();
+      const stamp = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+      saveBlob(zip, `${ratioTag()}-batch-${stamp}.zip`);
+      toast(`ZIP 저장 완료 · ${files.length}장`);
+    } catch (err) {
+      console.error(err);
+      toast('ZIP을 만드는 중 문제가 생겼어요');
+    } finally {
+      batch.busy = false;
+      els.batchZip.textContent = label;
+      batchRender();
+    }
+  }
+
+  /* ───────── 비율 ───────── */
+
+  function setOutRatio(r) {
+    if (!OUT_SIZES[r] || batch.out === r) return;
+    batch.out = r;
+    syncRatioChips();
+    batchRender();
+    if (batch.edit) paintEditor();
+  }
+
+  function syncRatioChips() {
+    $$('#batchRatios button, #editRatios button').forEach(b => {
+      b.classList.toggle('on', b.dataset.out === batch.out);
+    });
+  }
+
+  /* ───────── 크게 보기 + 모자이크 편집 ───────── */
+
+  function openBatchEditor(item) {
+    if (!item || !item.img) return;
+    batch.edit = item;
+    batch.drag = null;
+    els.editName.textContent = item.name;
+    els.editModal.hidden = false;
+    document.body.classList.add('modal-open');
+
+    const lastMosaic = [...item.edits].reverse().find(e => e.type === 'mosaic');
+    if (lastMosaic && lastMosaic.strength) {
+      batch.strength = lastMosaic.strength;
+      els.sMosaic.value = lastMosaic.strength;
+    }
+
+    syncRatioChips();
+    updateEditUI();
+    paintEditor();
+  }
+
+  function closeBatchEditor() {
+    if (els.editModal.hidden) return;
+    batch.edit = null;
+    batch.drag = null;
+    batch.geo = null;
+    els.editModal.hidden = true;
+    document.body.classList.remove('modal-open');
+    batchRender();
+  }
+
+  /* 모달 캔버스 = 지금 비율의 출력 화면. 편집 좌표는 원본 기준으로 되돌려 저장한다 */
+  function paintEditor(tempSrcRect) {
+    const item = batch.edit;
+    if (!item || !item.img) return;
+
+    const [OW, OH] = OUT_SIZES[batch.out];
+    const k = Math.min(1, 900 / Math.max(OW, OH));
+    const W = Math.round(OW * k), H = Math.round(OH * k);
+    const canvas = els.editCanvas;
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+
+    const src = sourceFor(item);
+    const iw = src.naturalWidth || src.width;
+    const ih = src.naturalHeight || src.height;
+    const s = Math.min(W / iw, H / ih);
+    const dw = iw * s, dh = ih * s;
+    batch.geo = { W, H, dw, dh, dx: (W - dw) / 2, dy: (H - dh) / 2 };
+
+    const ctx = canvas.getContext('2d');
+    paintContain(ctx, src, W, H, batch.bg);
+
+    if (tempSrcRect && tempSrcRect.w > 0 && tempSrcRect.h > 0) {
+      const r = srcRectToOut(tempSrcRect);
+      const x = r.x * W, y = r.y * H, w = r.w * W, h = r.h * H;
+      ctx.save();
+      ctx.fillStyle = batch.tool === 'white' ? 'rgba(255,255,255,.5)'
+        : batch.tool === 'black' ? 'rgba(0,0,0,.5)' : 'rgba(255,77,109,.22)';
+      ctx.fillRect(x, y, w, h);
+      ctx.setLineDash([7, 4]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ff4d6d';
+      ctx.strokeRect(x, y, w, h);
+      ctx.restore();
+    }
+
+    els.editMeta.textContent = `${iw}×${ih} → ${OW}×${OH} · ${batch.out}`;
+  }
+
+  function srcRectToOut(r) {
+    const g = batch.geo;
+    if (!g) return { x: 0, y: 0, w: 0, h: 0 };
+    return {
+      x: (g.dx + r.x * g.dw) / g.W,
+      y: (g.dy + r.y * g.dh) / g.H,
+      w: (r.w * g.dw) / g.W,
+      h: (r.h * g.dh) / g.H
+    };
+  }
+
+  function pointerSrc(e) {
+    const g = batch.geo;
+    const rect = els.editCanvas.getBoundingClientRect();
+    if (!g || !rect.width || !rect.height) return null;
+    const nx = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    const ny = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+    const px = nx * g.W, py = ny * g.H;
+    if (px < g.dx - 1 || px > g.dx + g.dw + 1 || py < g.dy - 1 || py > g.dy + g.dh + 1) {
+      return null; /* 여백은 가릴 것이 없음 */
+    }
+    return {
+      x: clamp((px - g.dx) / g.dw, 0, 1),
+      y: clamp((py - g.dy) / g.dh, 0, 1)
+    };
+  }
+
+  function normRect(a, b) {
+    return {
+      x: Math.min(a.x, b.x),
+      y: Math.min(a.y, b.y),
+      w: Math.abs(b.x - a.x),
+      h: Math.abs(b.y - a.y)
+    };
+  }
+
+  function updateEditUI() {
+    const item = batch.edit;
+    const n = item ? item.edits.length : 0;
+    els.editCount.textContent = `수정 ${n}개`;
+    els.editUndo.disabled = n === 0;
+    els.editReset.disabled = n === 0;
+    els.mosaicWrap.hidden = batch.tool !== 'mosaic';
+    els.oMosaic.textContent = batch.strength;
+    $$('#editTools button').forEach(b => b.classList.toggle('on', b.dataset.tool === batch.tool));
+    syncRatioChips();
+  }
+
+  /* ───────── 일괄 탭 이벤트 ───────── */
+
+  els.batchDrop.addEventListener('click', e => {
+    if (e.target === els.batchInput) return;
+    els.batchInput.click();
+  });
+  els.batchInput.addEventListener('change', e => {
+    batchAddFiles(e.target.files);
+    e.target.value = '';
+  });
+  ['dragenter', 'dragover'].forEach(t => els.batchDrop.addEventListener(t, e => {
+    e.preventDefault();
+    els.batchDrop.classList.add('dragging');
+  }));
+  ['dragleave', 'dragend'].forEach(t => els.batchDrop.addEventListener(t, () => els.batchDrop.classList.remove('dragging')));
+  els.batchDrop.addEventListener('drop', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    els.batchDrop.classList.remove('dragging');
+    batchAddFiles(e.dataTransfer && e.dataTransfer.files);
+  });
+  els.batchView.addEventListener('dragover', e => {
+    if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault();
+  });
+  els.batchView.addEventListener('drop', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    els.batchDrop.classList.remove('dragging');
+    batchAddFiles(e.dataTransfer && e.dataTransfer.files);
+  });
+
+  $$('#batchRatios button, #editRatios button').forEach(b => {
+    b.addEventListener('click', () => setOutRatio(b.dataset.out));
+  });
+
+  els.batchBg.addEventListener('input', e => {
+    batch.bg = e.target.value;
+    batchRender();
+    if (batch.edit) paintEditor();
+  });
+
+  els.batchClear.addEventListener('click', batchClearAll);
+  els.batchZip.addEventListener('click', batchDownloadZip);
+
+  els.editClose.addEventListener('click', closeBatchEditor);
+  els.editModal.addEventListener('click', e => { if (e.target === els.editModal) closeBatchEditor(); });
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !els.editModal.hidden) closeBatchEditor();
+  });
+
+  $$('#editTools button').forEach(b => b.addEventListener('click', () => {
+    batch.tool = b.dataset.tool;
+    updateEditUI();
+    if (batch.edit) paintEditor();
+  }));
+
+  els.sMosaic.addEventListener('input', () => {
+    const v = Number(els.sMosaic.value);
+    batch.strength = v;
+    const item = batch.edit;
+    if (item) {
+      for (let i = item.edits.length - 1; i >= 0; i--) {
+        if (item.edits[i].type === 'mosaic') {
+          item.edits[i].strength = v;
+          item.rev++;
+          item._edited = null;
+          paintEditor();
+          break;
+        }
+      }
+    }
+    updateEditUI();
+  });
+
+  els.editUndo.addEventListener('click', () => {
+    const item = batch.edit;
+    if (!item || !item.edits.length) return;
+    item.edits.pop();
+    item.rev++;
+    item._edited = null;
+    updateEditUI();
+    paintEditor();
+  });
+
+  els.editReset.addEventListener('click', () => {
+    const item = batch.edit;
+    if (!item || !item.edits.length) return;
+    item.edits = [];
+    item.rev++;
+    item._edited = null;
+    updateEditUI();
+    paintEditor();
+    toast('원본 상태로 돌렸어요');
+  });
+
+  els.editCanvas.addEventListener('pointerdown', e => {
+    if (!batch.edit) return;
+    const p = pointerSrc(e);
+    if (!p) return;
+    batch.drag = { x0: p.x, y0: p.y };
+    try { els.editCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault();
+  });
+
+  els.editCanvas.addEventListener('pointermove', e => {
+    if (!batch.drag) return;
+    const p = pointerSrc(e);
+    if (!p) return;
+    paintEditor(normRect({ x: batch.drag.x0, y: batch.drag.y0 }, p));
+  });
+
+  const endEditDrag = e => {
+    if (!batch.drag) return;
+    const p = pointerSrc(e);
+    const start = { x: batch.drag.x0, y: batch.drag.y0 };
+    batch.drag = null;
+    if (!p) { paintEditor(); return; }
+    const r = normRect(start, p);
+    const item = batch.edit;
+    if (item && r.w > 0.004 && r.h > 0.004) {
+      const edit = { type: batch.tool, x: r.x, y: r.y, w: r.w, h: r.h };
+      if (batch.tool === 'mosaic') edit.strength = batch.strength;
+      item.edits.push(edit);
+      item.rev++;
+      item._edited = null;
+    }
+    updateEditUI();
+    paintEditor();
+  };
+  els.editCanvas.addEventListener('pointerup', endEditDrag);
+  els.editCanvas.addEventListener('pointercancel', e => {
+    batch.drag = null;
+    paintEditor();
+    void e;
+  });
+
+  syncRatioChips();
+  batchPaint();
+
   // 디버그용 (앱 동작에는 영향 없음)
-  window.__mts = { state, render, updateLabels, renderBase, drawCard };
+  window.__mts = { state, render, updateLabels, renderBase, drawCard, batch, batchPaint, buildZip };
 
   load();
   if (state.mode === 'card' && state.ratio === '1:1') state.ratio = '4:5';

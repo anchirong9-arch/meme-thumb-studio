@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e1014">
 <title>짤 썸네일 스튜디오</title>
-<meta name="description" content="짤 썸네일에 문구 띠 얹고, 상품 후기 카드까지 만들고, 유튜브·틱톡 피드 미리보기로 확인하는 도구">
-<link rel="stylesheet" href="style.css?v=6">
+<meta name="description" content="짤 썸네일에 문구 띠 얹고, 상품 후기 카드까지 만들고, 유튜브·틱톡 피드 미리보기로 확인하고, 이미지를 4:5로 일괄 변환하는 도구">
+<link rel="stylesheet" href="style.css?v=7">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230e1014'/%3E%3Crect x='6' y='17' width='20' height='8' rx='2' fill='%23ff4d6d'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -23,6 +23,7 @@
   <nav class="modes" role="tablist" aria-label="제작 종류">
     <button type="button" role="tab" data-mode="thumb" class="on">짤 썸네일</button>
     <button type="button" role="tab" data-mode="card">상품 후기 카드</button>
+    <button type="button" role="tab" data-mode="batch">📐 4:5 일괄 여백 변환</button>
   </nav>
 
   <div class="ratio" role="group" aria-label="출력 비율">
@@ -32,7 +33,7 @@
   </div>
 </header>
 
-<main class="layout">
+<main class="layout" id="layoutMain">
 
   <!-- ───────────────── 에디터 ───────────────── -->
   <section class="pane editor" aria-label="편집">
@@ -248,8 +249,84 @@
   </section>
 </main>
 
+<!-- ───────────────── 4:5 일괄 여백 변환 ───────────────── -->
+<section class="batch-view" id="batchView" aria-label="4:5 일괄 여백 변환" hidden>
+  <div class="batch-head">
+    <div>
+      <h2>📐 4:5 일괄 여백 변환</h2>
+      <p class="hint">이미지를 한 번에 최대 20장까지 올리면 비율 그대로 캔버스 가운데에 넣고 남는 곳을 배경색으로 채웁니다. <b>4:5 · 1:1 · 9:16 · 16:9</b> 중에 고를 수 있어요.</p>
+    </div>
+    <span class="count" id="batchCount">0 / 20장</span>
+  </div>
+
+  <div class="dropzone" id="batchDrop" title="이미지를 끌어다 놓거나 눌러서 선택">
+    <div class="drop-ico" aria-hidden="true">⇪</div>
+    <b>이미지를 끌어다 놓기</b>
+    <span>또는 <u>여기를 눌러 선택</u> · Ctrl+V 붙여넣기 · 최대 20장</span>
+    <input type="file" id="batchInput" accept="image/*" multiple hidden>
+  </div>
+
+  <div class="batch-bar">
+    <div class="batch-opts">
+      <span class="opt-label">출력 비율</span>
+      <div class="seg batch-ratios" id="batchRatios" role="group" aria-label="출력 비율">
+        <button type="button" data-out="4:5" class="on">4:5</button>
+        <button type="button" data-out="1:1">1:1</button>
+        <button type="button" data-out="9:16">9:16</button>
+        <button type="button" data-out="16:9">16:9</button>
+      </div>
+    </div>
+    <label class="color-row batch-color"><span>여백 색</span><input type="color" id="batchBg" value="#ffffff"></label>
+    <button type="button" class="btn ghost" id="batchClear">전체 지우기</button>
+    <button type="button" class="btn primary batch-zip" id="batchZip" disabled>모두 ZIP으로 한 번에 다운로드</button>
+  </div>
+
+  <div class="batch-grid" id="batchGrid"></div>
+  <p class="hint" id="batchHint">올린 순서대로 1080 × 1350 PNG로 변환됩니다. 사진을 누르면 모자이크·가리기를 할 수 있어요.</p>
+</section>
+
+<!-- 사진 편집(모자이크·가리기) -->
+<div class="modal" id="editModal" role="dialog" aria-modal="true" aria-label="모자이크·가리기 편집" hidden>
+  <div class="modal-panel">
+    <div class="modal-head">
+      <div>
+        <b id="editName">사진</b>
+        <small id="editMeta"></small>
+      </div>
+      <button type="button" class="btn ghost tiny" id="editClose">닫기</button>
+    </div>
+    <div class="seg edit-ratios" id="editRatios" role="group" aria-label="출력 비율">
+      <button type="button" data-out="4:5" class="on">4:5</button>
+      <button type="button" data-out="1:1">1:1</button>
+      <button type="button" data-out="9:16">9:16</button>
+      <button type="button" data-out="16:9">16:9</button>
+    </div>
+    <div class="edit-stage" id="editStage">
+      <canvas id="editCanvas"></canvas>
+      <div class="edit-tip">드래그해서 가릴 곳을 지정하세요</div>
+    </div>
+    <div class="edit-tools">
+      <div class="seg" id="editTools" role="group" aria-label="가리기 방식">
+        <button type="button" data-tool="mosaic" class="on">모자이크</button>
+        <button type="button" data-tool="white">흰색 가리기</button>
+        <button type="button" data-tool="black">검은색 가리기</button>
+      </div>
+      <div class="slider" id="mosaicWrap">
+        <div class="s-head"><label for="sMosaic">모자이크 강도</label><output id="oMosaic">16</output></div>
+        <input type="range" id="sMosaic" min="6" max="48" step="2" value="16">
+      </div>
+      <div class="edit-acts">
+        <button type="button" class="btn" id="editUndo">되돌리기</button>
+        <button type="button" class="btn ghost" id="editReset">원본 복구</button>
+        <span class="count" id="editCount">수정 0개</span>
+      </div>
+      <p class="hint">모자이크 강도는 마지막으로 그린 모자이크에도 바로 적용됩니다. 편집한 상태 그대로 선택한 비율의 PNG·ZIP에 담깁니다.</p>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
