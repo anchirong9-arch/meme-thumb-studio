@@ -1467,15 +1467,15 @@
     };
   }
 
-  function pointerSrc(e) {
+  function pointerSrc(e, strict) {
     const g = batch.geo;
     const rect = els.editCanvas.getBoundingClientRect();
     if (!g || !rect.width || !rect.height) return null;
     const nx = clamp((e.clientX - rect.left) / rect.width, 0, 1);
     const ny = clamp((e.clientY - rect.top) / rect.height, 0, 1);
     const px = nx * g.W, py = ny * g.H;
-    if (px < g.dx - 1 || px > g.dx + g.dw + 1 || py < g.dy - 1 || py > g.dy + g.dh + 1) {
-      return null; /* 여백은 가릴 것이 없음 */
+    if (strict && (px < g.dx - 1 || px > g.dx + g.dw + 1 || py < g.dy - 1 || py > g.dy + g.dh + 1)) {
+      return null; /* 여백에서 시작한 드래그는 무시 */
     }
     return {
       x: clamp((px - g.dx) / g.dw, 0, 1),
@@ -1601,7 +1601,7 @@
 
   els.editCanvas.addEventListener('pointerdown', e => {
     if (!batch.edit) return;
-    const p = pointerSrc(e);
+    const p = pointerSrc(e, true);
     if (!p) return;
     batch.drag = { x0: p.x, y0: p.y };
     try { els.editCanvas.setPointerCapture(e.pointerId); } catch (_) {}
