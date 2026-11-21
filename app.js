@@ -13,6 +13,7 @@
   const state = {
     mode: 'thumb',
     ratio: '1:1',
+    ratioByMode: { thumb: '1:1', card: '4:5' },
     tab: 'yt',
     mask: false,
     caption: '상품이 궁금하면 프로필 링크에서 021번!',
@@ -592,7 +593,7 @@
     try {
       const { t, c } = state;
       localStorage.setItem(LS_KEY, JSON.stringify({
-        mode: state.mode, ratio: state.ratio, caption: state.caption,
+        mode: state.mode, ratio: state.ratio, ratioByMode: state.ratioByMode, caption: state.caption,
         t: { text: t.text, size: t.size, lh: t.lh, pad: t.pad, opacity: t.opacity, stroke: t.stroke, textColor: t.textColor, strokeColor: t.strokeColor, bandColor: t.bandColor, pos: t.pos, align: t.align },
         c: { title: c.title, titleSize: c.titleSize, highlight: c.highlight, accent: c.accent, name: c.name, listPrice: c.listPrice, salePrice: c.salePrice, body: c.body }
       }));
@@ -604,6 +605,9 @@
       const s = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
       if (!s) return;
       if (RATIOS[s.ratio]) state.ratio = s.ratio;
+      if (s.ratioByMode) {
+        ['thumb', 'card'].forEach(m => { if (RATIOS[s.ratioByMode[m]]) state.ratioByMode[m] = s.ratioByMode[m]; });
+      }
       if (s.mode === 'thumb' || s.mode === 'card') state.mode = s.mode;
       if (typeof s.caption === 'string') state.caption = s.caption;
       if (s.t) {
@@ -738,8 +742,9 @@
 
   // 모드 전환
   $$('.modes button').forEach(b => b.addEventListener('click', () => {
+    state.ratioByMode[state.mode] = state.ratio;
     state.mode = b.dataset.mode;
-    if (state.mode === 'card' && state.ratio === '1:1') state.ratio = '4:5';
+    state.ratio = state.ratioByMode[state.mode] || (state.mode === 'card' ? '4:5' : '1:1');
     syncInputs();
     render();
   }));
@@ -747,6 +752,7 @@
   // 비율
   $$('.ratio button').forEach(b => b.addEventListener('click', () => {
     state.ratio = b.dataset.ratio;
+    state.ratioByMode[state.mode] = state.ratio;
     state.t.ox = 0; state.t.oy = 0;
     syncInputs();
     render();
