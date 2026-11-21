@@ -330,7 +330,7 @@
       ctx.fillStyle = c.accent;
       ctx.textBaseline = 'alphabetic';
       ctx.fillText(priceText, cx, y + 50);
-      y += 58;
+      y += 66;
 
       if (showList) {
         const lt = '정가 ' + won(list) + '원';
@@ -339,15 +339,15 @@
         ctx.fillStyle = '#a3aab6';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(lt, W / 2, y + 18);
+        ctx.fillText(lt, W / 2, y + 21);
         // 취소선
         ctx.strokeStyle = '#a3aab6';
         ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.moveTo(W / 2 - lw / 2, y + 19);
-        ctx.lineTo(W / 2 + lw / 2, y + 19);
+        ctx.moveTo(W / 2 - lw / 2, y + 22);
+        ctx.lineTo(W / 2 + lw / 2, y + 22);
         ctx.stroke();
-        y += 34;
+        y += 40;
       }
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
