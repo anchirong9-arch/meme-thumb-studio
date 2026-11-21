@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e1014">
 <title>짤 썸네일 스튜디오</title>
-<meta name="description" content="짤 이미지에 굵은 문구 띠를 얹고 유튜브·틱톡 피드 미리보기까지 확인하는 썸네일 제작 도구">
+<meta name="description" content="짤 썸네일에 문구 띠 얹고, 상품 후기 카드까지 만들고, 유튜브·틱톡 피드 미리보기로 확인하는 도구">
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230e1014'/%3E%3Crect x='6' y='17' width='20' height='8' rx='2' fill='%23ff4d6d'/%3E%3C/svg%3E">
 </head>
@@ -16,9 +16,15 @@
     <span class="logo" aria-hidden="true"></span>
     <div>
       <b>짤 썸네일 스튜디오</b>
-      <small>문구 얹고 · 피드 미리보기 · PNG 저장</small>
+      <small>문구 띠 · 상품 카드 · 피드 미리보기 · PNG</small>
     </div>
   </div>
+
+  <nav class="modes" role="tablist" aria-label="제작 종류">
+    <button type="button" role="tab" data-mode="thumb" class="on">짤 썸네일</button>
+    <button type="button" role="tab" data-mode="card">상품 후기 카드</button>
+  </nav>
+
   <div class="ratio" role="group" aria-label="출력 비율">
     <button type="button" data-ratio="1:1" class="on">1:1</button>
     <button type="button" data-ratio="4:5">4:5</button>
@@ -35,7 +41,7 @@
         <canvas id="stageCanvas"></canvas>
         <div class="stage-empty" id="stageEmpty">
           <div class="drop-ico" aria-hidden="true">⇪</div>
-          <b>이미지를 끌어다 놓기</b>
+          <b id="emptyTitle">이미지를 끌어다 놓기</b>
           <span>또는 <u>여기를 눌러 선택</u> · Ctrl+V 붙여넣기</span>
         </div>
         <div class="stage-tip" id="stageTip">드래그해서 위치 조정</div>
@@ -48,7 +54,8 @@
       <input type="file" id="fileInput" accept="image/*" hidden>
     </div>
 
-    <div class="controls">
+    <!-- 짤 썸네일 패널 -->
+    <div class="controls" id="panelThumb">
       <div class="card">
         <div class="card-head">
           <label for="textInput">띠 문구 <small>줄바꿈으로 2~3줄</small></label>
@@ -60,6 +67,10 @@
           <button type="button" data-preset="2">2줄 예시</button>
           <button type="button" data-preset="3">3줄 예시</button>
         </div>
+        <div class="seg" role="group" aria-label="띠 위치">
+          <button type="button" data-pos="bottom" class="on">띠 하단</button>
+          <button type="button" data-pos="top">띠 상단</button>
+        </div>
         <div class="seg" role="group" aria-label="정렬">
           <button type="button" data-align="left">왼쪽</button>
           <button type="button" data-align="center" class="on">가운데</button>
@@ -68,32 +79,85 @@
       </div>
 
       <div class="card">
-        <div class="slider" data-key="size">
+        <div class="slider">
           <div class="s-head"><label for="sSize">글자 크기</label><output id="oSize">104</output></div>
-          <input type="range" id="sSize" min="48" max="180" step="2" value="104">
+          <input type="range" id="sSize" min="40" max="200" step="2" value="104">
         </div>
-        <div class="slider" data-key="lh">
+        <div class="slider">
           <div class="s-head"><label for="sLh">줄 간격</label><output id="oLh">1.15</output></div>
-          <input type="range" id="sLh" min="0.85" max="1.8" step="0.05" value="1.15">
+          <input type="range" id="sLh" min="0.85" max="1.9" step="0.05" value="1.15">
         </div>
-        <div class="slider" data-key="pad">
+        <div class="slider">
           <div class="s-head"><label for="sPad">띠 두께</label><output id="oPad">1.0</output></div>
-          <input type="range" id="sPad" min="0.2" max="2.2" step="0.1" value="1">
+          <input type="range" id="sPad" min="0.2" max="2.4" step="0.1" value="1">
         </div>
-        <div class="slider" data-key="opacity">
+        <div class="slider">
           <div class="s-head"><label for="sOpacity">띠 투명도</label><output id="oOpacity">78%</output></div>
           <input type="range" id="sOpacity" min="0" max="100" step="1" value="78">
         </div>
-        <div class="slider" data-key="stroke">
-          <div class="s-head"><label for="sStroke">글자 테두리</label><output id="oStroke">16</output></div>
-          <input type="range" id="sStroke" min="0" max="30" step="1" value="16">
+        <div class="slider">
+          <div class="s-head"><label for="sStroke">테두리 두께</label><output id="oStroke">16</output></div>
+          <input type="range" id="sStroke" min="0" max="34" step="1" value="16">
         </div>
-        <div class="slider" data-key="zoom">
+        <div class="slider">
           <div class="s-head"><label for="sZoom">이미지 확대</label><output id="oZoom">100%</output></div>
-          <input type="range" id="sZoom" min="100" max="300" step="1" value="100">
+          <input type="range" id="sZoom" min="100" max="320" step="1" value="100">
+        </div>
+        <div class="colors">
+          <label class="color-row"><span>글자 색</span><input type="color" id="cText" value="#ffffff"></label>
+          <label class="color-row"><span>테두리 색</span><input type="color" id="cStroke" value="#000000"></label>
+          <label class="color-row"><span>띠 색</span><input type="color" id="cBand" value="#000000"></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- 상품 후기 카드 패널 -->
+    <div class="controls" id="panelCard" hidden>
+      <div class="card">
+        <div class="card-head">
+          <label>제목 <small>형광펜 강조</small></label>
+          <span class="count">프리셋 5종</span>
+        </div>
+        <div class="presets" id="titlePresets">
+          <button type="button">이 가격 맞나 싶은 가성비 꿀템</button>
+          <button type="button">1만 원 이하인데 뽕 뽑는 제품</button>
+          <button type="button">솔직히 이 가격이면 무조건 쟁이는 템</button>
+          <button type="button" class="on">좋은데 저평가 받는 제품 甲</button>
+          <button type="button">가성비로 이미 정평 난 박리다매템</button>
+        </div>
+        <input type="text" id="titleInput" maxlength="40" placeholder="제목을 직접 입력해도 됩니다">
+        <div class="slider" style="margin-top:12px">
+          <div class="s-head"><label for="sTitleSize">제목 크기</label><output id="oTitleSize">66</output></div>
+          <input type="range" id="sTitleSize" min="36" max="104" step="1" value="66">
+        </div>
+        <div class="colors">
+          <label class="color-row"><span>형광펜 색</span><input type="color" id="cHighlight" value="#ffe94d"></label>
+          <label class="color-row"><span>가격 색</span><input type="color" id="cAccent" value="#e93e5d"></label>
         </div>
       </div>
 
+      <div class="card">
+        <div class="card-head"><label for="nameInput">상품명</label></div>
+        <input type="text" id="nameInput" maxlength="48" placeholder="예) 카템 원터치 탁상시계">
+        <div class="two">
+          <label class="field"><span>정가</span><input type="text" id="listPrice" inputmode="numeric" placeholder="19900"></label>
+          <label class="field"><span>할인가</span><input type="text" id="salePrice" inputmode="numeric" placeholder="12900"></label>
+        </div>
+        <p class="hint" id="priceHint">할인율은 정가·할인가로 자동 계산합니다.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><label for="bodyInput">후기 본문 <small>구어체 존댓말</small></label><span class="count" id="bodyCount">0자</span></div>
+        <textarea id="bodyInput" rows="4" maxlength="220" placeholder="써보니 생각보다 튼튼하고 마감도 깔끔해서 만족했습니다. 가격 생각하면 이 정도면 충분한 것 같아요."></textarea>
+        <div class="chips" id="bodyPresets">
+          <button type="button">마감 만족</button>
+          <button type="button">가격 대비 굿</button>
+          <button type="button">재구매 의사</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
       <div class="card">
         <div class="card-head"><label for="captionInput">제목 / 캡션</label></div>
         <input type="text" id="captionInput" value="상품이 궁금하면 프로필 링크에서 021번!">
