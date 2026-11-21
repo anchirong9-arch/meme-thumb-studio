@@ -59,6 +59,7 @@
     maskBtn: $('#maskBtn'),
     ttMask: $('#ttMask'),
     downloadBtn: $('#downloadBtn'),
+    dlHint: $('#dlHint'),
     toast: $('#toast'),
     titleInput: $('#titleInput'),
     nameInput: $('#nameInput'),
@@ -550,13 +551,17 @@
     if (raf) return;
     raf = requestAnimationFrame(() => {
       raf = 0;
-      renderBase();
-      drawStage();
-      drawYt();
-      const tt = drawTt();
-      updateChecks(tt);
-      updateLabels();
-      save();
+      try {
+        renderBase();
+        drawStage();
+        drawYt();
+        const tt = drawTt();
+        updateChecks(tt);
+        updateLabels();
+        save();
+      } catch (err) {
+        console.error(err);
+      }
     });
   }
 
