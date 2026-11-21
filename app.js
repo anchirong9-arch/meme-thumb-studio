@@ -433,6 +433,7 @@
     stageCtx.clearRect(0, 0, W, H);
     stageCtx.drawImage(base, 0, 0);
     els.stage.classList.toggle('empty', !activeImage());
+    els.stage.classList.toggle('cardmode', state.mode === 'card');
     els.dims.textContent = `${W} × ${H}`;
   }
 
