@@ -1453,7 +1453,7 @@
       ctx.restore();
     }
 
-    els.editMeta.textContent = `${iw}×${ih} → ${OW}×${OH} · ${batch.out}`;
+    els.editMeta.textContent = `${item.img.naturalWidth || item.img.width}×${item.img.naturalHeight || item.img.height} → ${OW}×${OH} · ${batch.out}`;
   }
 
   function srcRectToOut(r) {
