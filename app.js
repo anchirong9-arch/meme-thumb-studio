@@ -734,8 +734,7 @@
   // 모드 전환
   $$('.modes button').forEach(b => b.addEventListener('click', () => {
     state.mode = b.dataset.mode;
-    if (state.mode === 'card' && state.ratio === '9:16') state.ratio = '4:5';
-    if (state.mode === 'thumb' && state.ratio === '4:5' && !state.c.img) state.ratio = '1:1';
+    if (state.mode === 'card' && state.ratio === '1:1') state.ratio = '4:5';
     syncInputs();
     render();
   }));
@@ -861,6 +860,9 @@
       toast('PNG 저장 완료 · ' + name);
     }, 'image/png');
   });
+
+  // 디버그용 (앱 동작에는 영향 없음)
+  window.__mts = { state, render, updateLabels, renderBase, drawCard };
 
   load();
   if (state.mode === 'card' && state.ratio === '1:1') state.ratio = '4:5';
