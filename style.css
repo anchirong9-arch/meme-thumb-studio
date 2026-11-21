@@ -343,15 +343,15 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:3px solid var(
   display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0;
   padding:10px 11px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
 }
-.batch-opts{display:flex;align-items:center;gap:8px;flex:1 1 250px;min-width:0}
+.batch-opts{display:flex;align-items:center;gap:8px;flex:0 1 auto;min-width:0}
 .opt-label{font-size:11.5px;color:var(--muted);flex:none}
-.batch-ratios{margin:0;flex:1;min-width:0}
-.batch-ratios button{font-size:11.5px;padding:6px 3px}
+.batch-ratios{margin:0;flex:none}
+.batch-ratios button{flex:none;min-width:56px;padding:6px 12px;font-size:11.5px}
 .batch-color{flex:none;width:auto;padding:6px 9px}
 .batch-bar .btn.ghost{margin-left:auto}
 .btn.batch-zip{width:auto;padding:10px 16px;font-size:13px;border-radius:11px}
 
-.batch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(142px,1fr));gap:10px}
+.batch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px}
 .batch-grid:empty{display:none}
 .batch-card{
   margin:0;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;
@@ -441,6 +441,8 @@ body.modal-open{overflow:hidden}
   .batch-grid{grid-template-columns:repeat(auto-fill,minmax(124px,1fr))}
   .batch-bar{padding:9px 10px}
   .batch-opts{flex:1 1 100%}
+  .batch-ratios{flex:1}
+  .batch-ratios button{flex:1;min-width:0;padding:6px 4px}
   .batch-bar .btn.ghost{margin-left:0}
   .btn.batch-zip{flex:1 1 100%}
 }
