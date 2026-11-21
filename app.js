@@ -256,7 +256,7 @@
       ctx.fillText('상품 사진', W / 2, box.y + box.h / 2 - 16);
       ctx.font = fontStr(30, 600);
       ctx.fillStyle = '#cbd1db';
-      ctx.fillText('아래 "이미지 선택"으로 넣어 주세요', W / 2, box.y + box.h / 2 + 52);
+      ctx.fillText('아래 "상품 사진 선택"으로 넣어 주세요', W / 2, box.y + box.h / 2 + 52);
     }
     ctx.restore();
     y += photoH + Math.round(H * 0.026);
@@ -331,7 +331,7 @@
       ctx.fillStyle = c.accent;
       ctx.textBaseline = 'alphabetic';
       ctx.fillText(priceText, cx, y + 50);
-      y += 66;
+      y += 72;
 
       if (showList) {
         const lt = '정가 ' + won(list) + '원';
@@ -340,15 +340,15 @@
         ctx.fillStyle = '#a3aab6';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(lt, W / 2, y + 21);
+        ctx.fillText(lt, W / 2, y + 24);
         // 취소선
         ctx.strokeStyle = '#a3aab6';
         ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.moveTo(W / 2 - lw / 2, y + 22);
-        ctx.lineTo(W / 2 + lw / 2, y + 22);
+        ctx.moveTo(W / 2 - lw / 2, y + 25);
+        ctx.lineTo(W / 2 + lw / 2, y + 25);
         ctx.stroke();
-        y += 40;
+        y += 42;
       }
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
